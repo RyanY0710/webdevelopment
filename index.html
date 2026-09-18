@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* Small custom touches on top of Tailwind */
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .today-glow { box-shadow: 0 0 0 2px rgba(56,189,248,.9), 0 0 28px rgba(56,189,248,.35); }
+  .fade-in { animation: fadeIn .25s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+
+<body class="min-h-screen bg-slate-950 text-slate-100">
+
+  <!-- ============ HEADER ============ -->
+  <header class="max-w-7xl mx-auto px-4 sm:px-6 pt-10 pb-6">
+    <p id="monthYear" class="text-sky-400 font-semibold tracking-widest uppercase text-xs sm:text-sm"></p>
+    <h1 id="greeting" class="mt-2 text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight"></h1>
+    <p id="subGreeting" class="mt-2 text-slate-400 text-sm sm:text-base"></p>
+  </header>
+
+  <!-- ============ MAIN LAYOUT ============ -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 pb-16 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- ---- Weekly calendar grid ---- -->
+    <section class="lg:col-span-2">
+      <h2 class="text-sm font-semibold uppercase tracking-widest text-slate-500 mb-3">This Week</h2>
+      <div id="weekGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <!-- Day cards injected by JavaScript -->
+      </div>
+    </section>
+
+    <!-- ---- Task tracker side panel ---- -->
+    <aside class="lg:col-span-1">
+      <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 lg:sticky lg:top-6">
+        <div class="flex items-baseline justify-between">
+          <h2 class="text-lg font-semibold">To-Do</h2>
+          <span id="taskCount" class="text-xs text-slate-500"></span>
+        </div>
+
+        <form id="taskForm" class="mt-4 flex gap-2">
+          <input
+            id="taskInput"
+            type="text"
+            placeholder="Add a task…"
+            autocomplete="off"
+            class="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm
+                   placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+          <button
+            type="submit"
+            class="shrink-0 bg-sky-500 hover:bg-sky-400 active:bg-sky-600 text-slate-950 font-semibold
+                   text-sm rounded-lg px-4 py-2 transition-colors">
+            Add
+          </button>
+        </form>
+
+        <ul id="taskList" class="mt-4 space-y-2"></ul>
+
+        <p id="emptyMsg" class="mt-4 text-sm text-slate-500 italic">No tasks yet — add one above.</p>
+
+        <button id="clearDone"
+          class="mt-5 w-full text-xs text-slate-500 hover:text-slate-300 transition-colors hidden">
+          Clear completed
+        </button>
+      </div>
+    </aside>
+
+  </main>
+
+  <footer class="max-w-7xl mx-auto px-4 sm:px-6 pb-10 text-xs text-slate-600">
+    Built with vanilla JavaScript · dates come from your system clock · tasks saved in this browser
+  </footer>
+
+<script>
+/* =========================================================
+   1. CONFIG
+   ========================================================= */
+const USER_NAME = "Ryan";              // <- change this to personalize the greeting
+const STORAGE_KEY = "weeklyDashboardTasks";
+
+const DAY_NAMES = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+
+/* =========================================================
+   2. HEADER — greeting + current month/year
+   ========================================================= */
+function renderHeader() {
+  const now = new Date();
+  const hour = now.getHours();
+
+  let timeOfDay = "evening";
+  if (hour < 12) timeOfDay = "morning";
+  else if (hour < 18) timeOfDay = "afternoon";
+
+  document.getElementById("greeting").textContent =
+    `Good ${timeOfDay}, ${USER_NAME}.`;
+
+  document.getElementById("monthYear").textContent =
+    now.toLocaleString("en-US", { month: "long" }) + " " + now.getFullYear();
+
+  document.getElementById("subGreeting").textContent =
+    "Here's how your week is shaping up. Today is " +
+    now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }) + ".";
+}
+
+
+/* =========================================================
+   3. WEEK GRID — Monday through Sunday of the CURRENT week
+   ========================================================= */
+function getMondayOfThisWeek(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate()); // strip time
+  const day = d.getDay();               // 0 = Sunday, 1 = Monday … 6 = Saturday
+  const offset = (day === 0) ? -6 : 1 - day;  // Sunday belongs to the week that started Monday
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+
+function renderWeek() {
+  const today = new Date();
+  const todayKey = today.toDateString();
+  const monday = getMondayOfThisWeek(today);
+  const grid = document.getElementById("weekGrid");
+  grid.innerHTML = "";
+
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    const isToday = d.toDateString() === todayKey;
+    const isWeekend = i >= 5;
+
+    const card = document.createElement("article");
+    card.className = [
+      "rounded-2xl border p-4 min-h-[120px] flex flex-col justify-between transition-transform duration-200",
+      isToday
+        ? "bg-sky-500/10 border-sky-400 today-glow scale-[1.02]"
+        : (isWeekend
+            ? "bg-slate-900/40 border-slate-800 hover:border-slate-700"
+            : "bg-slate-900/70 border-slate-800 hover:border-slate-700")
+    ].join(" ");
+
+    card.innerHTML = `
+      <div class="flex items-start justify-between gap-2">
+        <span class="text-sm font-semibold ${isToday ? "text-sky-300" : "text-slate-300"}">
+          ${DAY_NAMES[i]}
+        </span>
+        ${isToday
+          ? `<span class="text-[10px] font-bold uppercase tracking-wider bg-sky-400 text-slate-950 rounded-full px-2 py-0.5">Today</span>`
+          : ``}
+      </div>
+      <div class="mt-4">
+        <p class="text-2xl font-bold ${isToday ? "text-white" : "text-slate-400"}">
+          ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}
+        </p>
+        <p class="text-xs mt-1 ${isToday ? "text-sky-300/80" : "text-slate-600"}">
+          ${isWeekend ? "Weekend" : "Weekday"}
+        </p>
+      </div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+
+/* =========================================================
+   4. TASK TRACKER — with localStorage persistence
+   ========================================================= */
+let tasks = [];
+
+function loadTasks() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    tasks = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(tasks)) tasks = [];
+  } catch (err) {
+    console.warn("Could not read saved tasks:", err);
+    tasks = [];
+  }
+}
+
+function saveTasks() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  } catch (err) {
+    console.warn("Could not save tasks:", err);
+  }
+}
+
+function renderTasks() {
+  const list = document.getElementById("taskList");
+  const emptyMsg = document.getElementById("emptyMsg");
+  const clearBtn = document.getElementById("clearDone");
+  list.innerHTML = "";
+
+  tasks.forEach((task, index) => {
+    const li = document.createElement("li");
+    li.className = "fade-in flex items-center gap-3 bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-2";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = !!task.done;
+    checkbox.className = "h-4 w-4 shrink-0 accent-sky-500 cursor-pointer";
+    checkbox.addEventListener("change", () => {
+      tasks[index].done = checkbox.checked;
+      saveTasks();
+      renderTasks();
+    });
+
+    const span = document.createElement("span");
+    span.textContent = task.text;
+    span.className = "flex-1 text-sm break-words " +
+      (task.done ? "line-through text-slate-500" : "text-slate-200");
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "×";
+    del.setAttribute("aria-label", "Delete task");
+    del.className = "shrink-0 text-slate-500 hover:text-red-400 text-lg leading-none px-1 transition-colors";
+    del.addEventListener("click", () => {
+      tasks.splice(index, 1);
+      saveTasks();
+      renderTasks();
+    });
+
+    li.append(checkbox, span, del);
+    list.appendChild(li);
+  });
+
+  const remaining = tasks.filter(t => !t.done).length;
+  document.getElementById("taskCount").textContent =
+    tasks.length ? `${remaining} left of ${tasks.length}` : "";
+
+  emptyMsg.classList.toggle("hidden", tasks.length > 0);
+  clearBtn.classList.toggle("hidden", !tasks.some(t => t.done));
+}
+
+function addTask(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  tasks.push({ text: trimmed, done: false });
+  saveTasks();
+  renderTasks();
+}
+
+
+/* =========================================================
+   5. WIRE EVERYTHING UP
+   ========================================================= */
+document.getElementById("taskForm").addEventListener("submit", (e) => {
+  e.preventDefault();                       // stop the page from reloading
+  const input = document.getElementById("taskInput");
+  addTask(input.value);
+  input.value = "";
+  input.focus();
+});
+
+document.getElementById("clearDone").addEventListener("click", () => {
+  tasks = tasks.filter(t => !t.done);
+  saveTasks();
+  renderTasks();
+});
+
+renderHeader();
+renderWeek();
+loadTasks();
+renderTasks();
+
+// Keep the dashboard honest if the tab is left open past midnight
+setInterval(() => { renderHeader(); renderWeek(); }, 60 * 1000);
+</script>
+</body>
+</html>
